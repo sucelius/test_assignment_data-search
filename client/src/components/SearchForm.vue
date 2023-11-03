@@ -27,47 +27,48 @@ const timerValue = ref(5);
 const showTimer = ref(false);
 
 let pending = ref(false);
-let abortController = new AbortController();
+let abortController: any;
 
-function onSubmit() {
-  startTimer();
-  if (pending.value) {
-    abortController.abort();
-    pending.value = false;
+async function onSubmit() {
+  abortController = new AbortController();
+  removeOldServerData();
+
+  if (!showTimer.value) {
+    showTimer.value = true;
   }
 
+  let countdown = startCountdown();
+
+  if (pending.value) {
+    abortController.abort();
+  }
   pending.value = true;
-  dataFromServer.value = {
-    email: "",
-    number: "",
-  };
-  fetch("http://localhost:8000/find", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    signal: abortController.signal,
-    body: JSON.stringify({
-      email: emailUserInput.value.email,
-      number: numberMaskedValues.unmasked,
-    }),
-  })
-    .then((response) => response.json())
-    .then((data) => {
-      const { email, number } = data;
-      dataFromServer.value = { email, number };
-      pending.value = false;
-      abortController = new AbortController();
-    })
-    .catch((error) => {
-      abortController = new AbortController();
-      pending.value = false;
-      console.error("Ошибка:", error);
+
+  try {
+    const response = await fetch("http://localhost:8000/find", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      signal: abortController.signal,
+      body: JSON.stringify({
+        email: emailUserInput.value.email,
+        number: numberMaskedValues.unmasked,
+      }),
     });
+
+    const { email, number } = await response.json();
+    dataFromServer.value = { email, number };
+  } catch (error) {
+    console.error("Ошибка:", error);
+  } finally {
+    pending.value = false;
+
+    offTimer(countdown);
+  }
 }
 
-function startTimer() {
-  showTimer.value = true;
+function startCountdown() {
   let countdown = setInterval(() => {
     timerValue.value--;
 
@@ -77,6 +78,25 @@ function startTimer() {
       clearInterval(countdown);
     }
   }, 1000);
+
+  return countdown;
+}
+
+function removeOldServerData() {
+  dataFromServer.value = {
+    email: "",
+    number: "",
+  };
+}
+
+function offTimer(timerId: any) {
+  timerValue.value = 5;
+  showTimer.value = false;
+  clearInterval(timerId);
+}
+
+function abortFetch() {
+  abortController.abort();
 }
 </script>
 
@@ -95,8 +115,10 @@ function startTimer() {
       placeholder=" 99-99-99"
       type="tel"
     />
-    <button v-if="pending" class="submit-input" type="submit">Stop</button>
-    <button v-else class="submit-input" type="submit">Check</button>
+    <button v-if="pending" class="submit-input" @click="abortFetch()">
+      Stop
+    </button>
+    <button v-else class="submit-input">Check</button>
   </Form>
   <div>
     <span v-if="dataFromServer.email"> {{ dataFromServer.email }}</span>
